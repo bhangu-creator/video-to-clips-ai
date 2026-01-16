@@ -6,20 +6,28 @@
 
 generator client {
   provider = "prisma-client-js"
+  
 }
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model Video {
   id        String   @id @default(uuid())
   filename  String
+  filePath  String
   duration  Int
+  status    String   // uploaded | ready | failed
   createdAt DateTime @default(now())
 
+  transcript Transcript[]
+  lastTranscriptJobId String?
   clips     Clip[]
+  highlights  Highlight[]
 }
+
 
 model Clip {
   id          String   @id @default(uuid())
@@ -33,4 +41,68 @@ model Clip {
 
   video       Video    @relation(fields: [videoId], references: [id])
 }
+
+model Transcript {
+  id        String   @id @default(uuid())
+  videoId   String   
+  jobId     String
+  segments  Json
+  language  String?
+  createdAt DateTime @default(now())
+  video     Video    @relation(fields: [videoId], references: [id])
+  highlights  Highlight[]
+
+  @@index([videoId])
+  @@index([jobId])
+  
+
+}
+
+model TranscriptJob {
+  id        String   @id @default(uuid())
+  videoId  String
+  status   String   // PENDING | PROCESSING | FAILED | COMPLETED
+  error    String?
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([videoId])
+}
+
+model TranscriptChunk {
+  id        String   @id @default(uuid())
+  jobId     String
+  videoId   String
+  chunkIndex Int
+  filePath  String
+  status    String   // PENDING | PROCESSING | COMPLETED | FAILED
+  text      String?
+  error     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([jobId, chunkIndex])
+  @@index([jobId])
+}
+
+model Highlight {
+  id           String   @id @default(uuid())
+  videoId      String
+  transcriptId String
+
+  highlights   Json     // array of highlight segments
+
+  createdAt    DateTime @default(now())
+
+  video        Video      @relation(fields: [videoId], references: [id])
+  transcript   Transcript @relation(fields: [transcriptId], references: [id])
+
+  @@index([videoId])
+  @@index([transcriptId])
+}
+
+
+
+
 
