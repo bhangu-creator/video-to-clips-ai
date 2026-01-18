@@ -1,7 +1,6 @@
-//queuing the jobs
 import { Queue } from "bullmq";
 import { redisConnection } from "./redis";
 
-export const transcriptQueue = new Queue("transcript-queue", {
+export const clipsQueue = new Queue("clips-queue", {
   connection: redisConnection,
 });

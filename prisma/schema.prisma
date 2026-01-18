@@ -30,17 +30,22 @@ model Video {
 
 
 model Clip {
-  id          String   @id @default(uuid())
-  videoId     String
-  title       String
-  startTime   Float
-  endTime     Float
-  orientation String
-  filePath    String
-  createdAt   DateTime @default(now())
+  id        String   @id @default(uuid())
+  videoId   String
+  title     String
+  startTime Float
+  endTime   Float
 
-  video       Video    @relation(fields: [videoId], references: [id])
+  format    String   // "horizontal_16_9" | "vertical_9_16"
+  filePath  String
+
+  createdAt DateTime @default(now())
+
+  video     Video    @relation(fields: [videoId], references: [id])
+
+  @@index([videoId])
 }
+
 
 model Transcript {
   id        String   @id @default(uuid())
@@ -100,6 +105,16 @@ model Highlight {
 
   @@index([videoId])
   @@index([transcriptId])
+}
+
+model Job {
+  id        String   @id @default(uuid())
+  type      String   // "TRANSCRIPT" | "HIGHLIGHTS" | "CLIPS"
+  videoId   String
+  status    String   // pending | processing | done | failed
+  error     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 
