@@ -3,14 +3,17 @@ import fs from "fs/promises";
 import fsSync from "fs";
 import path from "path";
 
+// Supported clip formats
 type ClipFormat = "horizontal_16_9" | "vertical_9_16";
 
+// Highlight timing and title
 type Highlight = {
   startTime: number;
   endTime: number;
   title: string;
 };
 
+// Input data required to generate a clip
 type GenerateClipInput = {
   videoPath: string;
   videoId: string;
@@ -19,33 +22,38 @@ type GenerateClipInput = {
 };
 
 /**
- * ============================
- * Simple file logger
- * ============================
+ * Simple file-based logger setup
  */
 
 const logDir = path.join(process.cwd(), "logs");
+
+// Ensure logs directory exists
 if (!fsSync.existsSync(logDir)) {
   fsSync.mkdirSync(logDir, { recursive: true });
 }
 
+// Daily log file
 const logFile = path.join(
   logDir,
   `ffmpeg-${new Date().toISOString().split("T")[0]}.log`
 );
 
+// Write log messages to file and console
 function log(message: string) {
   const line = `[${new Date().toISOString()}] ${message}\n`;
   fsSync.appendFileSync(logFile, line);
   console.log(message);
 }
 
+// Generate a video clip from a highlight
 export async function generateClip({
   videoPath,
   videoId,
   highlight,
   format,
 }: GenerateClipInput): Promise<string> {
+
+  // Ensure input video path exists
   if (!videoPath) {
     throw new Error("Video path missing");
   }
@@ -56,9 +64,11 @@ export async function generateClip({
     throw new Error(`Input video not found: ${videoPath}`);
   }
 
+  // Create output directory for clips
   const outputDir = path.join("clips", videoId);
   await fs.mkdir(outputDir, { recursive: true });
 
+  // Calculate clip duration
   const duration = highlight.endTime - highlight.startTime;
   if (duration <= 0) {
     throw new Error(
@@ -66,10 +76,12 @@ export async function generateClip({
     );
   }
 
+  // Sanitize title for filename
   const safeTitle = highlight.title
     .replace(/[^a-zA-Z0-9]/g, "_")
     .substring(0, 50);
 
+  // Build output filename
   const timestamp = `${Math.floor(highlight.startTime)}_${Math.floor(
     highlight.endTime
   )}`;
@@ -78,6 +90,7 @@ export async function generateClip({
 
   let videoFilter: string;
 
+  // Select ffmpeg filter based on format
   if (format === "vertical_9_16") {
     videoFilter =
       "crop=ih*9/16:ih:(iw-ih*9/16)/2:0,scale=1080:1920";
@@ -86,18 +99,23 @@ export async function generateClip({
       "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2";
   }
 
-  //IMPORTANT: limit ffmpeg log spam
+  // FFmpeg command to generate clip
   const command = `ffmpeg -y -loglevel error -stats -ss ${highlight.startTime} -i "${videoPath}" -t ${duration} -vf "${videoFilter}" -c:v libx264 -preset fast -crf 23 -c:a aac -b:a 128k "${outputPath}"`;
 
+  // Log clip generation start
   log(`START clip | video=${videoId} | format=${format} | ${highlight.startTime}s → ${highlight.endTime}s`);
   log(`CMD: ${command}`);
 
+  // Run ffmpeg command
   return new Promise((resolve, reject) => {
     exec(command, { maxBuffer: 5 * 1024 * 1024 }, async (error, stdout, stderr) => {
+
+      // Log ffmpeg stderr output
       if (stderr) {
         log(`FFMPEG STDERR: ${stderr}`);
       }
 
+      // Handle ffmpeg error
       if (error) {
         log(`FFMPEG ERROR: ${error.message}`);
         reject(new Error(`FFmpeg failed: ${error.message}`));
@@ -105,6 +123,7 @@ export async function generateClip({
       }
 
       try {
+        // Verify output file exists and is valid
         await fs.access(outputPath);
         const stats = await fs.stat(outputPath);
 
@@ -114,6 +133,7 @@ export async function generateClip({
           return;
         }
 
+        // Log success
         log(
           `SUCCESS clip | ${outputPath} | ${(stats.size / 1024 / 1024).toFixed(
             2

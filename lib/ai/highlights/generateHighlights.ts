@@ -9,7 +9,7 @@ import {
   formatSegments,
 } from "@/lib/ai/highlights/highlightHelpers";
 
-//Types defined here
+// Type definitions for transcript and highlights
 
 type TranscriptSegment = {
   start: number;
@@ -26,7 +26,7 @@ type HighlightCandidate = {
   endTime: number;
   title: string;
   reason: string;
-  strength: number; // 0.0 – 1.0
+  strength: number;
 };
 
 type FinalHighlight = {
@@ -38,9 +38,7 @@ type FinalHighlight = {
 };
 
 /**
- * ============================
- * Groq Client
- * ============================
+ * Groq client setup
  */
 
 const groq = new Groq({
@@ -48,9 +46,7 @@ const groq = new Groq({
 });
 
 /**
- * ============================
- * Config
- * ============================
+ * Configuration values
  */
 
 const SEGMENTS_PER_CHUNK = 4;
@@ -58,24 +54,25 @@ const FINAL_MIN = 3;
 const FINAL_MAX = 5;
 const API_DELAY_MS = 1000;
 
-//highlight duration limits
-const MIN_HIGHLIGHT_DURATION = 15;   // seconds
-const MAX_HIGHLIGHT_DURATION = 120;  // seconds
+// Highlight duration limits
+const MIN_HIGHLIGHT_DURATION = 15;
+const MAX_HIGHLIGHT_DURATION = 120;
 
 /**
- * ============================
- *  Extract candidates
- * ============================
+ * Extract highlight candidates from transcript segments
  */
 
 async function extractCandidates(
   segments: TranscriptSegment[],
   retries = 2
 ): Promise<HighlightCandidate[]> {
+
+  // Convert segments into LLM-friendly format
   const formatted = formatSegments(segments);
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
+      // Call LLM to extract highlight candidates
       const completion = await groq.chat.completions.create({
         model: GROQ_MODEL,
         messages: [
@@ -85,9 +82,11 @@ async function extractCandidates(
         temperature: 0.3,
       });
 
+      // Read LLM response
       const content = completion.choices?.[0]?.message?.content;
       if (!content) throw new Error("Empty response from LLM (candidates)");
 
+      // Parse JSON response
       let parsed;
       try {
         parsed = JSON.parse(content);
@@ -95,10 +94,12 @@ async function extractCandidates(
         throw new Error("Invalid JSON from LLM (candidates)");
       }
 
+      // Validate candidates array
       if (!Array.isArray(parsed.candidates)) {
         throw new Error("Invalid candidates array");
       }
 
+      // Filter valid candidates
       return parsed.candidates.filter((c: HighlightCandidate) => {
         return (
           typeof c.startTime === "number" &&
@@ -110,6 +111,7 @@ async function extractCandidates(
         );
       });
     } catch (err: any) {
+      // Handle rate limits with retry
       const isRateLimit = err.status === 429;
       const isLastAttempt = attempt === retries;
 
@@ -129,15 +131,14 @@ async function extractCandidates(
 }
 
 /**
- * ============================
- *  Rank and merge candidates
- * ============================
+ * Rank candidates and remove duplicates
  */
 
 function rankAndMergeCandidates(
   candidates: HighlightCandidate[]
 ): HighlightCandidate[] {
-  //enforce min & max duration
+
+  // Enforce minimum and maximum duration
   const filtered = candidates
     .map((c) => {
       const duration = c.endTime - c.startTime;
@@ -158,15 +159,19 @@ function rankAndMergeCandidates(
 
   const deduplicated: HighlightCandidate[] = [];
 
+  // Remove overlapping highlights
   for (const candidate of filtered) {
     const isDuplicate = deduplicated.some((existing) => {
       const overlap =
         Math.min(candidate.endTime, existing.endTime) -
         Math.max(candidate.startTime, existing.startTime);
-      const candidateLength = candidate.endTime - candidate.startTime;
-      const existingLength = existing.endTime - existing.startTime;
+
       const overlapPercent =
-        overlap / Math.min(candidateLength, existingLength);
+        overlap /
+        Math.min(
+          candidate.endTime - candidate.startTime,
+          existing.endTime - existing.startTime
+        );
 
       return overlapPercent > 0.8;
     });
@@ -176,19 +181,20 @@ function rankAndMergeCandidates(
     }
   }
 
+  // Sort by strength score
   return deduplicated.sort((a, b) => b.strength - a.strength);
 }
 
 /**
- * ============================
- * Final selection
- * ============================
+ * Select final highlights using LLM
  */
 
 async function selectFinalHighlights(
   candidates: HighlightCandidate[],
   retries = 2
 ): Promise<FinalHighlight[]> {
+
+  // Format candidates for final selection
   const formatted = candidates
     .map(
       (c) =>
@@ -200,6 +206,7 @@ async function selectFinalHighlights(
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
+      // Call LLM for final highlight selection
       const completion = await groq.chat.completions.create({
         model: GROQ_MODEL,
         messages: [
@@ -212,6 +219,7 @@ async function selectFinalHighlights(
       const content = completion.choices?.[0]?.message?.content;
       if (!content) throw new Error("Empty response from LLM (final)");
 
+      // Parse JSON response
       let parsed;
       try {
         parsed = JSON.parse(content);
@@ -219,19 +227,22 @@ async function selectFinalHighlights(
         throw new Error("Invalid JSON from LLM (final)");
       }
 
+      // Validate highlights array
       if (!Array.isArray(parsed.highlights)) {
         throw new Error("Invalid highlights array");
       }
 
+      // Ensure highlight count is within limits
       if (
         parsed.highlights.length < FINAL_MIN ||
         parsed.highlights.length > FINAL_MAX
       ) {
         throw new Error(
-          `Final highlights count (${parsed.highlights.length}) out of range ${FINAL_MIN}-${FINAL_MAX}`
+          `Final highlights count (${parsed.highlights.length}) out of range`
         );
       }
 
+      // Add index to final highlights
       return parsed.highlights.map((h: any, i: number) => ({
         index: i + 1,
         title: h.title,
@@ -240,6 +251,7 @@ async function selectFinalHighlights(
         reason: h.reason,
       }));
     } catch (err: any) {
+      // Handle rate limits with retry
       const isRateLimit = err.status === 429;
       const isLastAttempt = attempt === retries;
 
@@ -259,28 +271,31 @@ async function selectFinalHighlights(
 }
 
 /**
- * ============================
- * Public API
- * ============================
+ * Main function to generate highlights from transcript
  */
 
 export async function generateHighlights(
   transcript: Transcript
 ): Promise<FinalHighlight[]> {
+
+  // Validate transcript input
   if (!transcript.segments || transcript.segments.length === 0) {
     throw new Error("Transcript has no segments");
   }
 
   console.log(`Processing ${transcript.segments.length} segments...`);
 
+  // Split transcript into chunks
   const chunks = chunkArray(transcript.segments, SEGMENTS_PER_CHUNK);
   console.log(`Split into ${chunks.length} chunks`);
 
   const allCandidates: HighlightCandidate[] = [];
 
+  // Process each chunk separately
   for (let i = 0; i < chunks.length; i++) {
     console.log(`Processing chunk ${i + 1}/${chunks.length}...`);
 
+    // Delay between API calls
     if (i > 0) {
       await new Promise((res) => setTimeout(res, API_DELAY_MS));
     }
@@ -294,24 +309,28 @@ export async function generateHighlights(
     }
   }
 
+  // Ensure at least one candidate exists
   if (allCandidates.length === 0) {
-    throw new Error("No highlight candidates found in any chunk");
+    throw new Error("No highlight candidates found");
   }
 
   console.log(`Total candidates found: ${allCandidates.length}`);
 
+  // Rank and deduplicate candidates
   const ranked = rankAndMergeCandidates(allCandidates);
   console.log(`After deduplication: ${ranked.length} candidates`);
 
+  // Select top candidates
   const topCandidates = ranked.slice(0, Math.min(10, ranked.length));
   console.log(`Sending top ${topCandidates.length} to final selection...`);
 
   await new Promise((res) => setTimeout(res, API_DELAY_MS));
 
+  // Get final highlights
   const finalHighlights = await selectFinalHighlights(topCandidates);
   console.log(`Selected ${finalHighlights.length} final highlights`);
 
-  // ADD: final safety clamp
+  // Final duration safety check
   return finalHighlights.map((h) => {
     const duration = h.endTime - h.startTime;
 

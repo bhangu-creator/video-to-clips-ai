@@ -1,35 +1,43 @@
 import { prisma } from "@/lib/prisma";
 import path from "path";
 
+// Supported clip formats
 type ClipFormat = "horizontal_16_9" | "vertical_9_16";
 
+// Highlight timing and title
 type Highlight = {
   title: string;
   startTime: number;
   endTime: number;
 };
 
+// Input required to save a clip record
 type SaveClipInput = {
   videoId: string;
   highlight: Highlight;
   format: ClipFormat;
 };
 
+// Save clip metadata to database
 export async function saveClipRow({
   videoId,
   highlight,
   format,
 }: SaveClipInput) {
-  // Sanitize title for filename
+
+  // Sanitize title for safe filename
   const safeTitle = highlight.title
     .replace(/[^a-zA-Z0-9]/g, "_")
     .substring(0, 50);
 
-  const timestamp = `${Math.floor(highlight.startTime)}_${Math.floor(highlight.endTime)}`;
+  // Build clip filename and path
+  const timestamp = `${Math.floor(highlight.startTime)}_${Math.floor(
+    highlight.endTime
+  )}`;
   const filename = `${format}_${timestamp}_${safeTitle}.mp4`;
   const filePath = path.join("clips", videoId, filename);
 
-  // Check if clip already exists
+  // Check if clip already exists in database
   const existing = await prisma.clip.findFirst({
     where: {
       videoId,
@@ -39,6 +47,7 @@ export async function saveClipRow({
     },
   });
 
+  // Return existing record if found
   if (existing) {
     console.log(`Clip already exists in DB: ${existing.id}`);
     return existing;

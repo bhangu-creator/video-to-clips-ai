@@ -1,3 +1,4 @@
+// System prompt used for overall highlight generation rules
 export const HIGHLIGHT_SYSTEM_PROMPT = `
 You are a professional video editor and content strategist.
 
@@ -21,7 +22,7 @@ Rules:
 - Do NOT create long summaries or full-section highlights
 `;
 
-
+// System prompt used to extract raw highlight candidates
 export const CANDIDATE_SYSTEM_PROMPT = `
 You are an AI assistant that extracts potential highlight moments from a transcript.
 
@@ -53,7 +54,7 @@ JSON format:
 }
 `;
 
-
+// System prompt used to select final highlights from candidates
 export const FINAL_SELECTION_SYSTEM_PROMPT = `
 You are an AI assistant that selects the best highlights.
 
@@ -82,4 +83,3 @@ JSON format:
   ]
 }
 `;
-

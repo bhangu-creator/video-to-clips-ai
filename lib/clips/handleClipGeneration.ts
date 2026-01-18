@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { generateClip } from "./generateClip";
 import { saveClipRow } from "./saveClipsRows";
 
+// Highlight structure used for clip generation
 type Highlight = {
   index?: number;
   startTime: number;
@@ -10,30 +11,36 @@ type Highlight = {
   reason: string;
 };
 
+// Handle clip generation job for a video
 export async function handleClipJob(videoId: string): Promise<void> {
-  // Fetch video
+
+  // Fetch video record
   const video = await prisma.video.findUnique({
     where: { id: videoId },
   });
 
+  // Ensure video and file path exist
   if (!video || !video.filePath) {
     throw new Error(`Video or video filePath missing for ${videoId}`);
   }
 
   console.log(`Video path: ${video.filePath}`);
 
-  // Fetch latest highlights
+  // Fetch latest highlights for the video
   const highlightsRecord = await prisma.highlight.findFirst({
     where: { videoId },
     orderBy: { createdAt: "desc" },
   });
 
+  // Ensure highlights record exists
   if (!highlightsRecord) {
     throw new Error(`No highlight record found for video ${videoId}`);
   }
 
+  // Cast highlights data
   const highlights = highlightsRecord.highlights as unknown as Highlight[];
 
+  // Validate highlights format
   if (!Array.isArray(highlights)) {
     throw new Error("Invalid highlights format");
   }
@@ -47,12 +54,13 @@ export async function handleClipJob(videoId: string): Promise<void> {
   const failedClips: string[] = [];
   let successCount = 0;
 
-  // Process highlights sequentially
+  // Process highlights one by one
   for (let i = 0; i < highlights.length; i++) {
     const highlight = highlights[i];
     const label = `Highlight ${i + 1}/${highlights.length} (${highlight.title})`;
 
     try {
+      // Validate highlight time range
       if (
         typeof highlight.startTime !== "number" ||
         typeof highlight.endTime !== "number"
@@ -72,6 +80,7 @@ export async function handleClipJob(videoId: string): Promise<void> {
 
       console.log(`Horizontal: ${horizontalPath}`);
 
+      // Save horizontal clip record
       await saveClipRow({
         videoId,
         highlight,
@@ -88,6 +97,7 @@ export async function handleClipJob(videoId: string): Promise<void> {
 
       console.log(`Vertical: ${verticalPath}`);
 
+      // Save vertical clip record
       await saveClipRow({
         videoId,
         highlight,
@@ -97,22 +107,23 @@ export async function handleClipJob(videoId: string): Promise<void> {
       successCount++;
 
     } catch (err: any) {
+      // Track failed clips and continue
       const errorLabel =
         typeof highlight.index === "number"
           ? `index ${highlight.index}`
           : `time ${highlight.startTime}-${highlight.endTime}`;
 
       console.error(`Failed: ${errorLabel}`, err.message);
-      
       failedClips.push(errorLabel);
-      
-      // Continue processing other clips
       continue;
     }
   }
 
-  console.log(`Clip generation complete: ${successCount}/${highlights.length} successful`);
+  console.log(
+    `Clip generation complete: ${successCount}/${highlights.length} successful`
+  );
 
+  // Throw error if any clips failed
   if (failedClips.length > 0) {
     throw new Error(
       `${failedClips.length} clip(s) failed: ${failedClips.join(", ")}`

@@ -2,17 +2,19 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { clipsQueue } from "@/lib/queue/clips.queue";
 
+// POST API to start clip generation for a video
 export async function POST(
   req: Request,
   { params }: { params: { videoId: string } }
 ) {
   try {
 
-    // Extract ID manually from URL
+    // Extract videoId from request URL
     const url = new URL(req.url);
     const segments = url.pathname.split("/");
     const videoId = segments[segments.length - 2]; 
 
+    // Return error if videoId is missing
     if (!videoId) {
       return NextResponse.json(
         { error: "videoId required" },
@@ -20,11 +22,12 @@ export async function POST(
       );
     }
 
-    // Ensure video exists
+    // Check if video exists in database
     const video = await prisma.video.findUnique({
       where: { id: videoId },
     });
 
+    // Return error if video not found
     if (!video) {
       return NextResponse.json(
         { error: "Video not found" },
@@ -32,12 +35,13 @@ export async function POST(
       );
     }
 
-    // Check if highlights exist
+    // Fetch latest highlights for the video
     const highlightsRecord = await prisma.highlight.findFirst({
       where: { videoId },
       orderBy: { createdAt: "desc" },
     });
 
+    // Ensure highlights exist before generating clips
     if (!highlightsRecord) {
       return NextResponse.json(
         { error: "No highlights found for this video. Generate highlights first." },
@@ -45,7 +49,7 @@ export async function POST(
       );
     }
 
-    // Prevent duplicate jobs
+    // Check if a clip generation job is already running
     const existingJob = await prisma.job.findFirst({
       where: {
         videoId,
@@ -54,6 +58,7 @@ export async function POST(
       },
     });
 
+    // Return existing job info if already processing
     if (existingJob) {
       return NextResponse.json(
         { 
@@ -65,7 +70,7 @@ export async function POST(
       );
     }
 
-    // Create job
+    // Create a new clip generation job
     const job = await prisma.job.create({
       data: {
         type: "CLIPS",
@@ -74,13 +79,13 @@ export async function POST(
       },
     });
 
-    // Update video status
+    // Update video status to processing
     await prisma.video.update({
       where: { id: videoId },
       data: { status: "processing" },
     });
 
-    // Add job to queue
+    // Add clip generation job to queue
     await clipsQueue.add(
       "clips-queue",
       { videoId },
@@ -93,7 +98,7 @@ export async function POST(
       }
     );
 
-    // Respond immediately
+    // Respond immediately without waiting for job completion
     return NextResponse.json(
       {
         status: "accepted",
@@ -104,6 +109,7 @@ export async function POST(
     );
 
   } catch (error: any) {
+    // Handle unexpected errors
     console.error("Clips API error:", error);
     return NextResponse.json(
       { error: error.message ?? "Internal server error" },
@@ -112,17 +118,18 @@ export async function POST(
   }
 }
 
-// GET endpoint to check clip generation status
+// GET API to check clip generation status and results
 export async function GET(
   req: Request,
   { params }: { params: { videoId: string } }
 ) {
   try {
-    // Extract ID manually from URL
+    // Extract videoId from request URL
     const url = new URL(req.url);
     const segments = url.pathname.split("/");
     const videoId = segments[segments.length - 2];
 
+    // Return error if videoId is missing
     if (!videoId) {
       return NextResponse.json(
         { error: "videoId required" },
@@ -130,7 +137,7 @@ export async function GET(
       );
     }
 
-    // Get latest job
+    // Fetch latest clip generation job
     const job = await prisma.job.findFirst({
       where: {
         videoId,
@@ -139,12 +146,13 @@ export async function GET(
       orderBy: { createdAt: "desc" },
     });
 
-    // Get clips
+    // Fetch all generated clips for the video
     const clips = await prisma.clip.findMany({
       where: { videoId },
       orderBy: { createdAt: "desc" },
     });
 
+    // Return job status and clip data
     return NextResponse.json({
       job: job ? {
         id: job.id,
@@ -166,6 +174,7 @@ export async function GET(
     });
 
   } catch (error: any) {
+    // Handle unexpected errors
     console.error("Clips GET API error:", error);
     return NextResponse.json(
       { error: error.message ?? "Internal server error" },
