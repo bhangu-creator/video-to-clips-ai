@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "worker": "tsx lib/worker/transcript.worker.ts",
-    "clips_worker":"tsx lib/worker/clips.worker.ts"
+    "clips_worker":"tsx lib/worker/clips.worker.ts",
+    "clear_queue": "tsx lib/utils/clearQueue.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
