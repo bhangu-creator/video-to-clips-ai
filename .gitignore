@@ -41,5 +41,7 @@ Thumbs.db
 
 # ===== * =====
 clips
-Logs
+logs
+clips/
+logs/
 uploads/original
